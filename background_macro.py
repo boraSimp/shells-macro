@@ -1,19 +1,25 @@
 """
-background_macro.py
-====================
-Non-intrusive background automation using Windows API (User32 via pywin32).
-Sends keyboard/mouse inputs directly to a target window without stealing focus.
+roblox_background_macro.py
+===========================
+Non-intrusive background automation for Roblox using Windows API.
+Sends inputs directly to the Roblox window without stealing focus.
 
 Dependencies:
     pip install pywin32 keyboard
 
-Usage:
-    1. Set TARGET_APP_TITLE to the window title of your game/app.
-    2. Run the script.
-    3. Press F3 to toggle ON/OFF.
-    4. Press F4 to exit cleanly.
+Build to exe:
+    pyinstaller --onefile --console ^
+        --hidden-import win32gui ^
+        --hidden-import win32api ^
+        --hidden-import win32con ^
+        roblox_background_macro.py
+
+Hotkeys:
+    F3  →  Toggle macro ON / OFF
+    F4  →  Exit script
 """
 
+import sys
 import time
 import threading
 import ctypes
@@ -21,29 +27,43 @@ import ctypes
 import win32gui
 import win32api
 import win32con
-import keyboard  # pip install keyboard
+import keyboard
 
 # ============================================================
-# ▶  CONFIGURATION — edit these to match your target app
+# ▶  CONFIGURATION
 # ============================================================
 
-TARGET_APP_TITLE = "Your Application Title Here"  # Partial or full window title
+TARGET_APP_TITLE = "Roblox"   # Matches any window containing "Roblox"
 
-# Fixed timing values (in seconds) — adjust to match your game's rhythm
-LOOP_INTERVAL   = 0.05   # How often the main loop ticks  (50 ms)
-ACTION_DELAY    = 0.02   # Pause between key-down and key-up inside send_key
-CLICK_DELAY     = 0.015  # Pause between button-down and button-up inside click
+# Timing (seconds)
+LOOP_INTERVAL = 0.05    # Main loop tick  (50 ms)
+ACTION_DELAY  = 0.02    # Between key-down and key-up
+CLICK_DELAY   = 0.015   # Between mouse-down and mouse-up
 
 # Hotkeys
-HOTKEY_TOGGLE   = "f3"   # Press to start / pause the macro
-HOTKEY_EXIT     = "f4"   # Press to exit the script entirely
+HOTKEY_TOGGLE = "f3"
+HOTKEY_EXIT   = "f4"
 
 # ============================================================
 # ▶  GLOBAL STATE
 # ============================================================
 
-running       = False   # Macro active flag
-_stop_event   = threading.Event()
+running     = False
+_stop_event = threading.Event()
+
+
+# ============================================================
+# ▶  SAFE ALERT (works in exe, no stdin needed)
+# ============================================================
+
+def alert(title: str, message: str) -> None:
+    """Show a Windows message box — works inside a compiled .exe."""
+    ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)  # MB_ICONERROR
+
+
+def info(title: str, message: str) -> None:
+    """Show an info message box."""
+    ctypes.windll.user32.MessageBoxW(0, message, title, 0x40)  # MB_ICONINFORMATION
 
 
 # ============================================================
@@ -52,36 +72,40 @@ _stop_event   = threading.Event()
 
 def find_window(title_fragment: str) -> int | None:
     """
-    Search for a visible window whose title contains `title_fragment`
-    (case-insensitive).  Returns the HWND or None if not found.
+    Find a visible window whose title contains title_fragment (case-insensitive).
+    Returns the HWND or None.
     """
-    found_hwnd = []
+    found = []
 
-    def enum_callback(hwnd, _):
+    def callback(hwnd, _):
         if win32gui.IsWindowVisible(hwnd):
-            wnd_title = win32gui.GetWindowText(hwnd)
-            if title_fragment.lower() in wnd_title.lower():
-                found_hwnd.append(hwnd)
+            if title_fragment.lower() in win32gui.GetWindowText(hwnd).lower():
+                found.append(hwnd)
 
-    win32gui.EnumWindows(enum_callback, None)
+    win32gui.EnumWindows(callback, None)
 
-    if found_hwnd:
-        hwnd = found_hwnd[0]
+    if found:
+        hwnd  = found[0]
         title = win32gui.GetWindowText(hwnd)
-        print(f"[✓] Window found  →  HWND={hwnd:#010x}  Title='{title}'")
+        print(f"[✓] Found  →  HWND={hwnd:#010x}  '{title}'")
         return hwnd
 
-    print(f"[✗] Window NOT found: '{title_fragment}'")
-    print("    Make sure the application is open and the title is correct.")
+    print(f"[✗] Window not found: '{title_fragment}'")
     return None
 
 
 def require_window(title_fragment: str) -> int:
-    """Like find_window but exits the script if the window is missing."""
+    """
+    Find the window or show an error popup and exit — safe for compiled .exe.
+    """
     hwnd = find_window(title_fragment)
     if hwnd is None:
-        input("\nPress Enter to exit...")
-        raise SystemExit(1)
+        alert(
+            "Window Not Found",
+            f"Could not find a window containing:\n\n\"{title_fragment}\"\n\n"
+            "Make sure Roblox is open, then run the macro again."
+        )
+        sys.exit(1)
     return hwnd
 
 
@@ -91,166 +115,118 @@ def require_window(title_fragment: str) -> int:
 
 def send_key_background(hwnd: int, vk_code: int) -> None:
     """
-    Send a single key press (down + up) to `hwnd` in the background.
+    Send a key press (down + up) to hwnd without focusing the window.
 
     Parameters
     ----------
     hwnd    : target window handle
-    vk_code : Virtual-Key code (e.g. win32con.VK_SPACE, ord('A'), 0x41)
-
-    Uses PostMessage (fire-and-forget) so the script never blocks
-    waiting for the target app to process the message.
+    vk_code : Virtual-Key code  (e.g. win32con.VK_SPACE, ord('E'), 0x41)
     """
-    # WM_KEYDOWN  — lParam bits: repeat=1, scancode, extended, etc.
-    scan_code = ctypes.windll.user32.MapVirtualKeyW(vk_code, 0)
-    lp_down   = (scan_code << 16) | 1            # repeat count = 1
-    lp_up     = (scan_code << 16) | 0xC0000001   # transition + previous state flags
+    scan  = ctypes.windll.user32.MapVirtualKeyW(vk_code, 0)
+    lp_dn = (scan << 16) | 1
+    lp_up = (scan << 16) | 0xC0000001
 
-    win32api.PostMessage(hwnd, win32con.WM_KEYDOWN, vk_code, lp_down)
+    win32api.PostMessage(hwnd, win32con.WM_KEYDOWN, vk_code, lp_dn)
     time.sleep(ACTION_DELAY)
     win32api.PostMessage(hwnd, win32con.WM_KEYUP,   vk_code, lp_up)
-
-
-def send_char_background(hwnd: int, char: str) -> None:
-    """
-    Send a WM_CHAR message for text-input fields.
-    Use this for typing characters; use send_key_background for control keys.
-    """
-    win32api.PostMessage(hwnd, win32con.WM_CHAR, ord(char), 0)
 
 
 # ============================================================
 # ▶  BACKGROUND INPUT — MOUSE
 # ============================================================
 
-def _make_lparam(x: int, y: int) -> int:
-    """Pack (x, y) client coordinates into a single LPARAM value."""
+def _lp(x: int, y: int) -> int:
     return (y << 16) | (x & 0xFFFF)
 
 
 def click_background(hwnd: int, x: int, y: int) -> None:
     """
-    Send a left mouse click to `hwnd` at CLIENT coordinates (x, y).
-
-    Client coordinates are relative to the top-left corner of the
-    target window's client area — NOT screen coordinates.
-
-    Parameters
-    ----------
-    hwnd : target window handle
-    x, y : position in client (window-relative) coordinates
+    Left-click at client coordinates (x, y) inside hwnd.
+    Coordinates are relative to the top-left of the Roblox window.
     """
-    lp = _make_lparam(x, y)
-
+    lp = _lp(x, y)
     win32api.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lp)
     time.sleep(CLICK_DELAY)
     win32api.PostMessage(hwnd, win32con.WM_LBUTTONUP,   0,                   lp)
 
 
-def right_click_background(hwnd: int, x: int, y: int) -> None:
-    """Same as click_background but for the right mouse button."""
-    lp = _make_lparam(x, y)
-    win32api.PostMessage(hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lp)
-    time.sleep(CLICK_DELAY)
-    win32api.PostMessage(hwnd, win32con.WM_RBUTTONUP,   0,                   lp)
+def get_client_center(hwnd: int) -> tuple[int, int]:
+    r = win32gui.GetClientRect(hwnd)
+    return r[2] // 2, r[3] // 2
 
 
-def move_mouse_background(hwnd: int, x: int, y: int) -> None:
-    """Send a WM_MOUSEMOVE to `hwnd` at client coordinates (x, y)."""
-    win32api.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, _make_lparam(x, y))
-
-
-# ============================================================
-# ▶  COORDINATE HELPERS
-# ============================================================
-
-def screen_to_client(hwnd: int, screen_x: int, screen_y: int) -> tuple[int, int]:
-    """Convert screen (absolute) coordinates to client coordinates for `hwnd`."""
-    pt = win32gui.ScreenToClient(hwnd, (screen_x, screen_y))
+def screen_to_client(hwnd: int, sx: int, sy: int) -> tuple[int, int]:
+    pt = win32gui.ScreenToClient(hwnd, (sx, sy))
     return pt[0], pt[1]
 
 
-def get_client_center(hwnd: int) -> tuple[int, int]:
-    """Return the center point of the window's client area."""
-    rect = win32gui.GetClientRect(hwnd)          # (left, top, right, bottom)
-    return rect[2] // 2, rect[3] // 2
-
-
 # ============================================================
-# ▶  MACRO LOGIC  ← customise everything inside here
+# ▶  MACRO LOGIC  ← put your Roblox actions here
 # ============================================================
 
 def macro_loop(hwnd: int) -> None:
     """
-    Main macro loop — runs on its own thread while the macro is RUNNING.
-
-    Replace the example actions below with whatever your automation needs.
-    The loop stops when running becomes False or _stop_event is set.
+    Main loop running on its own thread.
+    Edit the section marked below to add your Roblox actions.
     """
-    print("[MACRO] Loop started.")
+    print("[MACRO] Thread started.")
 
     while not _stop_event.is_set():
 
-        # ── Wait if paused ──────────────────────────────────────
+        # ── Paused ──────────────────────────────────────────
         if not running:
             time.sleep(0.1)
             continue
 
-        # ── Re-validate window (may have closed/re-opened) ──────
+        # ── Window still alive? ──────────────────────────────
         if not win32gui.IsWindow(hwnd):
-            print("[!] Target window closed. Pausing macro.")
+            print("[!] Roblox window closed — pausing.")
             set_running(False)
             time.sleep(1.0)
             continue
 
-        # ════════════════════════════════════════════════════════
-        #   YOUR AUTOMATION ACTIONS GO HERE
-        #   Examples shown below — replace with your own logic.
-        # ════════════════════════════════════════════════════════
+        # ════════════════════════════════════════════════════
+        #   YOUR ROBLOX ACTIONS — edit below
+        # ════════════════════════════════════════════════════
 
-        # Example 1: Press SPACE every loop tick
+        # --- Example: Auto-jump (press Space every tick) ---
         # send_key_background(hwnd, win32con.VK_SPACE)
 
-        # Example 2: Click at a fixed position in the client area
-        # click_background(hwnd, x=400, y=300)
-
-        # Example 3: Press a letter key  (ord gives the VK code for A-Z)
+        # --- Example: Press 'E' to interact / collect ---
         # send_key_background(hwnd, ord('E'))
 
-        # Example 4: Click the center of the window
+        # --- Example: Click center of screen ---
         # cx, cy = get_client_center(hwnd)
         # click_background(hwnd, cx, cy)
 
-        # ────────────────────────────────────────────────────────
+        # --- Example: W key (move forward) ---
+        # send_key_background(hwnd, ord('W'))
+
+        # ════════════════════════════════════════════════════
         #   END OF YOUR ACTIONS
-        # ────────────────────────────────────────────────────────
+        # ════════════════════════════════════════════════════
 
         time.sleep(LOOP_INTERVAL)
 
-    print("[MACRO] Loop exited.")
+    print("[MACRO] Thread exited.")
 
 
 # ============================================================
-# ▶  STATE MANAGEMENT
+# ▶  STATE HELPERS
 # ============================================================
-
-_macro_thread: threading.Thread | None = None
 
 def set_running(state: bool) -> None:
-    """Toggle the macro on or off and print a status message."""
     global running
     running = state
-    label = "RUNNING  ▶" if state else "PAUSED   ⏸"
+    label   = "RUNNING  ▶" if state else "PAUSED   ⏸"
     print(f"\n[STATUS] {label}\n")
 
 
 def toggle_macro() -> None:
-    """Called when the toggle hotkey is pressed."""
     set_running(not running)
 
 
 def exit_script() -> None:
-    """Called when the exit hotkey is pressed."""
     print("\n[EXIT] Shutting down...")
     _stop_event.set()
     keyboard.unhook_all()
@@ -261,36 +237,23 @@ def exit_script() -> None:
 # ============================================================
 
 def main() -> None:
-    global _macro_thread
-
     print("=" * 55)
-    print("  Background Macro — pywin32 edition")
+    print("  Roblox Background Macro")
     print(f"  Target : '{TARGET_APP_TITLE}'")
-    print(f"  Toggle : {HOTKEY_TOGGLE.upper()}")
-    print(f"  Exit   : {HOTKEY_EXIT.upper()}")
+    print(f"  Toggle : {HOTKEY_TOGGLE.upper()}   |   Exit : {HOTKEY_EXIT.upper()}")
     print("=" * 55)
 
-    # ── Locate the target window ────────────────────────────
     hwnd = require_window(TARGET_APP_TITLE)
 
-    # ── Register global hotkeys ─────────────────────────────
     keyboard.add_hotkey(HOTKEY_TOGGLE, toggle_macro)
     keyboard.add_hotkey(HOTKEY_EXIT,   exit_script)
 
-    print(f"\nReady. Press {HOTKEY_TOGGLE.upper()} to start the macro.")
-    print(f"Press {HOTKEY_EXIT.upper()} to exit.\n")
+    print(f"\nReady. Press {HOTKEY_TOGGLE.upper()} to start, {HOTKEY_EXIT.upper()} to exit.\n")
 
-    # ── Start the macro thread ──────────────────────────────
-    _macro_thread = threading.Thread(
-        target=macro_loop,
-        args=(hwnd,),
-        daemon=True,
-        name="MacroLoop",
-    )
-    _macro_thread.start()
+    t = threading.Thread(target=macro_loop, args=(hwnd,), daemon=True, name="MacroLoop")
+    t.start()
 
-    # ── Block main thread until exit hotkey fires ───────────
-    _stop_event.wait()
+    _stop_event.wait()   # Block here — no input() call, safe in .exe
     print("[EXIT] Done.")
 
 
