@@ -1,4 +1,4 @@
-name: Build Macro EXE
+name: Build Roblox Macro
 
 on:
   workflow_dispatch: 
@@ -23,11 +23,11 @@ jobs:
         pip install pyinstaller pywin32 keyboard
 
     - name: Build with PyInstaller
-      # --admin-access ditambahkan agar PostMessage Windows API bekerja lancar
-      run: pyinstaller --onefile --windowed --uac-admin background_macro.py
+      # Menggunakan --uac-admin agar macro punya izin mengirim input ke game
+      run: pyinstaller --onefile --windowed --uac-admin roblox_background_macro.py
 
     - name: Upload Finished EXE
       uses: actions/upload-artifact@v4
       with:
-        name: Macro-Executable
+        name: Roblox-Macro-EXE
         path: dist/*.exe
