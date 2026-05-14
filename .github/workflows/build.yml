@@ -1,0 +1,34 @@
+name: Build Macro EXE
+
+on:
+  workflow_dispatch: # This lets you start the build manually
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install pyinstaller
+        # If your macro uses other libraries, add them here:
+        # pip install pyautogui pynput
+
+    - name: Build with PyInstaller
+      run: pyinstaller --onefile --windowed background_macro.py
+
+    - name: Upload Finished EXE
+      uses: actions/upload-artifact@v4
+      with:
+        name: Macro-Executable
+        path: dist/*.exe
