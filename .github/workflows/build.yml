@@ -20,10 +20,11 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install pyinstaller pywin32 pyautogui pynput keyboard
+        pip install pyinstaller pywin32 keyboard
 
     - name: Build with PyInstaller
-      run: pyinstaller --onefile --windowed background_macro.py
+      # --admin-access ditambahkan agar PostMessage Windows API bekerja lancar
+      run: pyinstaller --onefile --windowed --uac-admin background_macro.py
 
     - name: Upload Finished EXE
       uses: actions/upload-artifact@v4
