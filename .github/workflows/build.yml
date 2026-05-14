@@ -24,7 +24,7 @@ jobs:
 
     - name: Build with PyInstaller
       # Menggunakan --uac-admin agar macro punya izin mengirim input ke game
-      run: pyinstaller --onefile --windowed --uac-admin roblox_background_macro.py
+      run: pyinstaller --onefile --windowed --uac-admin background_macro.py
 
     - name: Upload Finished EXE
       uses: actions/upload-artifact@v4
