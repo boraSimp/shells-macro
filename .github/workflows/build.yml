@@ -23,7 +23,7 @@ jobs:
         pip install pyinstaller pywin32 keyboard
 
     - name: Build with PyInstaller
-      # Matches the script name you provided and adds admin rights for input sending
+      # Menggunakan --uac-admin agar macro punya izin mengirim input ke game
       run: pyinstaller --onefile --windowed --uac-admin roblox_background_macro.py
 
     - name: Upload Finished EXE
