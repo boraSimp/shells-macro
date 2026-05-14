@@ -1,7 +1,7 @@
 name: Build Macro EXE
 
 on:
-  workflow_dispatch: # This lets you start the build manually
+  workflow_dispatch: 
   push:
     branches: [ "main" ]
 
@@ -20,9 +20,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install pyinstaller
-        # If your macro uses other libraries, add them here:
-        # pip install pyautogui pynput
+        pip install pyinstaller pywin32 pyautogui pynput
 
     - name: Build with PyInstaller
       run: pyinstaller --onefile --windowed background_macro.py
