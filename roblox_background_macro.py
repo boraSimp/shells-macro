@@ -190,7 +190,7 @@ def macro_loop(hwnd: int) -> None:
         # ════════════════════════════════════════════════════
 
         # --- Example: Auto-jump (press Space every tick) ---
-         send_key_background(hwnd, win32con.VK_SPACE)
+        send_key_background(hwnd, win32con.VK_SPACE)
 
         # --- Example: Press 'E' to interact / collect ---
         # send_key_background(hwnd, ord('E'))
