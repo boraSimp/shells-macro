@@ -20,7 +20,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install pyinstaller pywin32 pyautogui pynput
+        pip install pyinstaller pywin32 pyautogui pynput keyboard
 
     - name: Build with PyInstaller
       run: pyinstaller --onefile --windowed background_macro.py
